@@ -29,19 +29,19 @@ jobs:
         with:
           project_id: 'shashigcp-454502'
 
-      - name: Configure Docker
+      - name: Configure Docker to use gcloud credential helper
         run: |
-          gcloud auth configure-docker gcr.io
+          gcloud auth configure-docker us-central1-docker.pkg.dev
 
       - name: Build and Push Docker Image
         run: |
-          docker build -t gcr.io/shashigcp-454502/hello-app:latest ./app
-          docker push gcr.io/shashigcp-454502/hello-app:latest
+          docker build -t us-central1-docker.pkg.dev/shashigcp-454502/hello-repo/hello-app:latest ./app
+          docker push us-central1-docker.pkg.dev/shashigcp-454502/hello-repo/hello-app:latest
 
       - name: Deploy to Cloud Run
         run: |
           gcloud run deploy hello-app \
-            --image gcr.io/shashigcp-454502/hello-app:latest \
+            --image us-central1-docker.pkg.dev/shashigcp-454502/hello-repo/hello-app:latest \
             --platform managed \
             --region us-central1 \
             --allow-unauthenticated
