@@ -21,7 +21,7 @@ jobs:
         uses: google-github-actions/auth@v1
         with:
           token_format: 'access_token'
-          workload_identity_provider: 'projects/393816461408/locations/global/workloadIdentityPools/github-pool-new/providers/github-provider-new'
+          workload_identity_provider: 'projects/393816461408/locations/global/workloadIdentityPools/github-pool-new/providers/github-provider-v2'
           service_account: 'github-actions-sa@shashigcp-454502.iam.gserviceaccount.com'
 
       - name: Set up gcloud SDK
