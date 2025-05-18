@@ -1,47 +1,126 @@
-name: Deploy to Cloud Run via Workload Identity Federation
+name: Full GCP Setup and Deploy to Cloud Run
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
 
 permissions:
   id-token: write
   contents: read
+
+env:
+  # 🔧 USER VARIABLES: SET ONLY THESE
+  PROJECT_ID: shashigcp-454502
+  GITHUB_USERNAME: shashivadhan
+  REPO_NAME: cicd-gcp-deploy
+  SERVICE_ACCOUNT: github-actions-sa
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v1
         with:
           token_format: 'access_token'
-          workload_identity_provider: 'projects/393816461408/locations/global/workloadIdentityPools/github-pool-new/providers/github-provider-v2'
-          service_account: 'github-actions-sa@shashigcp-454502.iam.gserviceaccount.com'
+          workload_identity_provider: 'projects/${{ env.PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-pool1/providers/github-provider1'
+          service_account: '${{ env.SERVICE_ACCOUNT }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com'
 
       - name: Set up gcloud SDK
         uses: google-github-actions/setup-gcloud@v2
         with:
-          project_id: 'shashigcp-454502'
+          project_id: '${{ env.PROJECT_ID }}'
 
-      - name: Configure Docker to use gcloud credential helper
+      - name: Get Project Number
+        id: get_project_number
         run: |
-          gcloud auth configure-docker us-central1-docker.pkg.dev
+          PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format="value(projectNumber)")
+          echo "PROJECT_NUMBER=$PROJECT_NUMBER" >> $GITHUB_ENV
 
-      - name: Build and Push Docker Image
+      - name: Enable Required APIs
         run: |
-          docker build -t us-central1-docker.pkg.dev/shashigcp-454502/hello-repo/hello-app:latest ./app
-          docker push us-central1-docker.pkg.dev/shashigcp-454502/hello-repo/hello-app:latest
+          gcloud services enable run.googleapis.com \
+                                   iam.googleapis.com \
+                                   artifactregistry.googleapis.com \
+                                   cloudbuild.googleapis.com
 
-      - name: Deploy to Cloud Run
+      - name: Create Artifact Registry Repo
         run: |
+          gcloud artifacts repositories create hello-repo1 \
+            --repository-format=docker \
+            --location=us-central1 \
+            --description="Artifact Registry for Cloud Run App" || echo "Repo may already exist"
+
+      - name: Create Workload Identity Pool
+        run: |
+          gcloud iam workload-identity-pools create github-pool1 \
+            --location=global \
+            --display-name="GitHub Pool" || echo "Pool may already exist"
+
+      - name: Create Workload Identity Provider
+        run: |
+          gcloud iam workload-identity-pools providers create-oidc github-provider1 \
+            --location=global \
+            --workload-identity-pool=github-pool1 \
+            --display-name="GitHub Provider" \
+            --issuer-uri="https://token.actions.githubusercontent.com" \
+            --attribute-mapping="google.subject=assertion.sub,attribute.actor=assertion.actor,attribute.repository=assertion.repository" \
+            --attribute-condition="attribute.repository=='${{ env.GITHUB_USERNAME }}/${{ env.REPO_NAME }}'" || echo "Provider may already exist"
+
+      - name: Create GitHub Actions Service Account
+        run: |
+          gcloud iam service-accounts create $SERVICE_ACCOUNT \
+            --display-name="GitHub Actions SA" || echo "Service Account may already exist"
+
+      - name: Bind Token Creator Role
+        run: |
+          gcloud iam service-accounts add-iam-policy-binding \
+            $SERVICE_ACCOUNT@${{ env.PROJECT_ID }}.iam.gserviceaccount.com \
+            --member="serviceAccount:$SERVICE_ACCOUNT@${{ env.PROJECT_ID }}.iam.gserviceaccount.com" \
+            --role="roles/iam.serviceAccountTokenCreator"
+
+      - name: Allow Workload Identity to Impersonate SA
+        run: |
+          gcloud iam service-accounts add-iam-policy-binding \
+            $SERVICE_ACCOUNT@${{ env.PROJECT_ID }}.iam.gserviceaccount.com \
+            --role="roles/iam.workloadIdentityUser" \
+            --member="principalSet://iam.googleapis.com/projects/${{ env.PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-pool1/attribute.repository/${{ env.GITHUB_USERNAME }}/${{ env.REPO_NAME }}"
+
+      - name: Grant Cloud Build Permission
+        run: |
+          gcloud projects add-iam-policy-binding $PROJECT_ID \
+            --member="serviceAccount:$SERVICE_ACCOUNT@${{ env.PROJECT_ID }}.iam.gserviceaccount.com" \
+            --role="roles/cloudbuild.builds.editor"
+
+      - name: Grant Cloud Run Permission
+        run: |
+          gcloud projects add-iam-policy-binding $PROJECT_ID \
+            --member="serviceAccount:$SERVICE_ACCOUNT@${{ env.PROJECT_ID }}.iam.gserviceaccount.com" \
+            --role="roles/run.admin"
+
+      - name: Grant Artifact Registry Write Permission
+        run: |
+          gcloud projects add-iam-policy-binding $PROJECT_ID \
+            --member="serviceAccount:$SERVICE_ACCOUNT@${{ env.PROJECT_ID }}.iam.gserviceaccount.com" \
+            --role="roles/artifactregistry.writer"
+
+      - name: Allow SA to Impersonate Compute Engine Default SA
+        run: |
+          gcloud iam service-accounts add-iam-policy-binding \
+            ${{ env.PROJECT_NUMBER }}-compute@developer.gserviceaccount.com \
+            --member="serviceAccount:$SERVICE_ACCOUNT@${{ env.PROJECT_ID }}.iam.gserviceaccount.com" \
+            --role="roles/iam.serviceAccountUser"
+
+      - name: Trigger Cloud Build and Deploy to Cloud Run
+        run: |
+          gcloud builds submit ./app \
+            --tag us-central1-docker.pkg.dev/${{ env.PROJECT_ID }}/hello-repo1/hello-app
           gcloud run deploy hello-app \
-            --image us-central1-docker.pkg.dev/shashigcp-454502/hello-repo/hello-app:latest \
-            --platform managed \
+            --image us-central1-docker.pkg.dev/${{ env.PROJECT_ID }}/hello-repo1/hello-app \
             --region us-central1 \
+            --platform managed \
             --allow-unauthenticated
