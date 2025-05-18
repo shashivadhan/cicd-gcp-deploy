@@ -1,3 +1,10 @@
+
+  # 🔧 USER VARIABLES: SET ONLY THESE
+  PROJECT_ID: shashigcp-454502
+  GITHUB_USERNAME: shashivadhan
+  REPO_NAME: cicd-gcp-deploy
+  SERVICE_ACCOUNT: github-actions-sa
+
 name: Full GCP Setup and Deploy to Cloud Run
 
 on:
@@ -9,11 +16,13 @@ permissions:
   contents: read
 
 env:
-  # 🔧 USER VARIABLES: SET ONLY THESE
-  PROJECT_ID: shashigcp-454502
+  # 🔧 Update these values for your project
+   PROJECT_ID: shashigcp-454502
   GITHUB_USERNAME: shashivadhan
   REPO_NAME: cicd-gcp-deploy
   SERVICE_ACCOUNT: github-actions-sa
+  PROJECT_NUMBER: 393816461408
+
 
 jobs:
   deploy:
@@ -34,12 +43,6 @@ jobs:
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: '${{ env.PROJECT_ID }}'
-
-      - name: Get Project Number
-        id: get_project_number
-        run: |
-          PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format="value(projectNumber)")
-          echo "PROJECT_NUMBER=$PROJECT_NUMBER" >> $GITHUB_ENV
 
       - name: Enable Required APIs
         run: |
@@ -115,7 +118,7 @@ jobs:
             --member="serviceAccount:$SERVICE_ACCOUNT@${{ env.PROJECT_ID }}.iam.gserviceaccount.com" \
             --role="roles/iam.serviceAccountUser"
 
-      - name: Trigger Cloud Build and Deploy to Cloud Run
+      - name: Build and Deploy to Cloud Run
         run: |
           gcloud builds submit ./app \
             --tag us-central1-docker.pkg.dev/${{ env.PROJECT_ID }}/hello-repo1/hello-app
