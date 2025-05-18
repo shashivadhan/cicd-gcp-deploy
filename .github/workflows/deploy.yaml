@@ -1,10 +1,3 @@
-
-  # 🔧 USER VARIABLES: SET ONLY THESE
-  PROJECT_ID: shashigcp-454502
-  GITHUB_USERNAME: shashivadhan
-  REPO_NAME: cicd-gcp-deploy
-  SERVICE_ACCOUNT: github-actions-sa
-
 name: Full GCP Setup and Deploy to Cloud Run
 
 on:
