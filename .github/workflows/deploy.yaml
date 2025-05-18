@@ -10,7 +10,7 @@ permissions:
 
 env:
   # 🔧 Update these values for your project
-   PROJECT_ID: shashigcp-454502
+  PROJECT_ID: shashigcp-454502
   GITHUB_USERNAME: shashivadhan
   REPO_NAME: cicd-gcp-deploy
   SERVICE_ACCOUNT: github-actions-sa
