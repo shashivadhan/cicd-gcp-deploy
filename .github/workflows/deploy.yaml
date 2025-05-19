@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 env:
-  # 🔧 Change these values only
+  # 🔧 Fill these with your values
   PROJECT_ID: shashigcp-454502
   PROJECT_NUMBER: 393816461408
   GITHUB_USERNAME: shashivadhan
@@ -24,14 +24,16 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # Create all Infra BEFORE authenticating
+      # Enable Required APIs
       - name: Enable Required APIs
         run: |
-          gcloud services enable run.googleapis.com \
-                                   iam.googleapis.com \
-                                   artifactregistry.googleapis.com \
-                                   cloudbuild.googleapis.com || true
+          gcloud services enable \
+            run.googleapis.com \
+            iam.googleapis.com \
+            artifactregistry.googleapis.com \
+            cloudbuild.googleapis.com || true
 
+      # Create Artifact Registry
       - name: Create Artifact Registry Repo
         run: |
           gcloud artifacts repositories create hello-repo1 \
@@ -39,27 +41,13 @@ jobs:
             --location=us-central1 \
             --description="Artifact Registry for Cloud Run App" || true
 
-      - name: Create Workload Identity Pool
-        run: |
-          gcloud iam workload-identity-pools create github-pool1 \
-            --location=global \
-            --display-name="GitHub Pool" || true
-
-      - name: Create Workload Identity Provider
-        run: |
-          gcloud iam workload-identity-pools providers create-oidc github-provider1 \
-            --location=global \
-            --workload-identity-pool=github-pool1 \
-            --display-name="GitHub Provider" \
-            --issuer-uri="https://token.actions.githubusercontent.com" \
-            --attribute-mapping="google.subject=assertion.sub,attribute.actor=assertion.actor,attribute.repository=assertion.repository" \
-            --attribute-condition="attribute.repository=='${{ env.GITHUB_USERNAME }}/${{ env.REPO_NAME }}'" || true
-
+      # Create Service Account
       - name: Create GitHub Actions Service Account
         run: |
           gcloud iam service-accounts create ${{ env.SERVICE_ACCOUNT }} \
             --display-name="GitHub Actions SA" || true
 
+      # Bind Token Creator Role to Service Account
       - name: Bind Token Creator Role
         run: |
           gcloud iam service-accounts add-iam-policy-binding \
@@ -67,6 +55,7 @@ jobs:
             --member="serviceAccount:${{ env.SERVICE_ACCOUNT }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com" \
             --role="roles/iam.serviceAccountTokenCreator" || true
 
+      # Allow GitHub to impersonate the SA via Workload Identity
       - name: Allow Workload Identity to Impersonate SA
         run: |
           gcloud iam service-accounts add-iam-policy-binding \
@@ -74,19 +63,20 @@ jobs:
             --role="roles/iam.workloadIdentityUser" \
             --member="principalSet://iam.googleapis.com/projects/${{ env.PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-pool1/attribute.repository/${{ env.GITHUB_USERNAME }}/${{ env.REPO_NAME }}" || true
 
-      - name: Grant Cloud Build Permission
+      # Grant required roles to SA
+      - name: Grant Cloud Build Role
         run: |
           gcloud projects add-iam-policy-binding ${{ env.PROJECT_ID }} \
             --member="serviceAccount:${{ env.SERVICE_ACCOUNT }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com" \
             --role="roles/cloudbuild.builds.editor" || true
 
-      - name: Grant Cloud Run Permission
+      - name: Grant Cloud Run Role
         run: |
           gcloud projects add-iam-policy-binding ${{ env.PROJECT_ID }} \
             --member="serviceAccount:${{ env.SERVICE_ACCOUNT }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com" \
             --role="roles/run.admin" || true
 
-      - name: Grant Artifact Registry Write Permission
+      - name: Grant Artifact Registry Role
         run: |
           gcloud projects add-iam-policy-binding ${{ env.PROJECT_ID }} \
             --member="serviceAccount:${{ env.SERVICE_ACCOUNT }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com" \
@@ -99,7 +89,7 @@ jobs:
             --member="serviceAccount:${{ env.SERVICE_ACCOUNT }}@${{ env.PROJECT_ID }}.iam.gserviceaccount.com" \
             --role="roles/iam.serviceAccountUser" || true
 
-      # Now Authenticate using the created provider/SA
+      # Authenticate GitHub Actions to GCP
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v1
         with:
@@ -112,6 +102,7 @@ jobs:
         with:
           project_id: '${{ env.PROJECT_ID }}'
 
+      # Build and Deploy to Cloud Run
       - name: Build and Deploy to Cloud Run
         run: |
           gcloud builds submit ./app \
